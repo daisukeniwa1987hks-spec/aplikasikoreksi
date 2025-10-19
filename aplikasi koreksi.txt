@@ -1,0 +1,1437 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Analisis & Koreksi Jawaban</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tambahan library untuk CSV dan PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-btn { transition: all 0.3s; }
+        .tab-btn.active { border-color: #2563eb; color: #2563eb; background-color: #eff6ff; }
+        .section { display: none; }
+        .section.active { display: block; }
+        .card { background-color: white; border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); }
+        .btn { padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600; text-align: center; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;}
+        .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+        .btn-primary { background-color: #2563eb; color: white; }
+        .btn-primary:hover { background-color: #1d4ed8; }
+        .btn-secondary { background-color: #4b5563; color: white; }
+        .btn-secondary:hover { background-color: #374151; }
+        .btn-green { background-color: #16a34a; color: white; }
+        .btn-green:hover { background-color: #15803d; }
+        .btn-danger { background-color: #dc2626; color: white; }
+        .btn-danger:hover { background-color: #b91c1c; }
+        input[type="text"], input[type="number"], select { border: 1px solid #d1d5db; border-radius: 0.5rem; padding: 0.75rem; width: 100%; transition: border-color 0.2s, box-shadow 0.2s; }
+        input[type="text"]:focus, input[type="number"]:focus, select:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2); }
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; opacity: 0; visibility: hidden; transition: all .3s; }
+        .modal-overlay.active { opacity: 1; visibility: visible; }
+        .modal-content { background: white; padding: 1.5rem; border-radius: 0.5rem; width: 90%; max-width: 500px; transform: scale(0.9); transition: all .3s; display: flex; flex-direction: column; max-height: 90vh; }
+        .modal-overlay.active .modal-content { transform: scale(1); }
+        .sub-tab-btn { transition: all 0.2s; border-bottom: 2px solid transparent; padding: 0.5rem 1rem; }
+        .sub-tab-btn.active { color: #2563eb; border-color: #2563eb; font-weight: 600; }
+        .analysis-section { display: none; }
+        .analysis-section.active { display: block; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div id="loadingOverlay" class="fixed inset-0 bg-white bg-opacity-80 z-50 flex items-center justify-center">
+        <div class="text-center">
+            <svg class="animate-spin h-8 w-8 text-blue-600 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-3 font-semibold text-gray-700">Menghubungkan ke database...</p>
+        </div>
+    </div>
+
+    <div class="container mx-auto p-4 md:p-8 max-w-7xl">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Aplikasi Super Koreksi 📝</h1>
+            <p class="text-gray-600 mt-2">Manajemen Siswa, Koreksi PG & Esai, dan Analisis Butir Soal Otomatis.</p>
+             <!-- User ID Display -->
+            <div id="userInfo" class="mt-4 text-xs text-gray-500 bg-gray-200 p-2 rounded-md inline-block hidden">
+                ID Pengguna: <span id="userIdDisplay" class="font-mono"></span>
+            </div>
+        </header>
+
+        <!-- Navigasi Tab -->
+        <div class="mb-6 border-b border-gray-200">
+            <nav class="flex flex-wrap" aria-label="Tabs">
+                <button class="tab-btn active font-semibold py-3 px-4 border-b-2 border-transparent hover:border-gray-300" data-tab="tab-manajemen">1. Manajemen Siswa 🧑‍🎓</button>
+                <button class="tab-btn font-semibold py-3 px-4 border-b-2 border-transparent hover:border-gray-300" data-tab="tab-koreksi">2. Sesi Koreksi ✍️</button>
+                <button class="tab-btn font-semibold py-3 px-4 border-b-2 border-transparent hover:border-gray-300" data-tab="tab-analisis">3. Analisis Soal 📊</button>
+                <button class="tab-btn font-semibold py-3 px-4 border-b-2 border-transparent hover:border-gray-300" data-tab="tab-hasil">4. Hasil Siswa 🏆</button>
+                <button class="tab-btn font-semibold py-3 px-4 border-b-2 border-transparent hover:border-gray-300" data-tab="tab-riwayat">5. Riwayat 📜</button>
+            </nav>
+        </div>
+
+        <!-- Konten Tab -->
+        <div id="tab-manajemen" class="section active">
+             <div class="card">
+                 <h2 class="text-xl font-semibold text-gray-700 mb-4">Daftar Siswa per Kelas</h2>
+                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                     <div>
+                         <label for="classSelect" class="block font-medium text-gray-700 mb-1">Pilih Kelas:</label>
+                         <select id="classSelect"></select>
+                     </div>
+                 </div>
+                 <div class="flex flex-wrap gap-3 mb-4">
+                     <button id="addStudentBtn" class="btn btn-primary">➕ Tambah Siswa</button>
+                     <label class="btn btn-secondary cursor-pointer">
+                         <span>⬆️ Unggah CSV</span>
+                         <input type="file" id="csvFile" accept=".csv" class="hidden">
+                     </label>
+                 </div>
+                 <div class="overflow-x-auto">
+                     <table class="min-w-full bg-white">
+                         <thead class="bg-gray-50">
+                             <tr>
+                                 <th class="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">No.</th>
+                                 <th class="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Nama Siswa</th>
+                                 <th class="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">Aksi</th>
+                             </tr>
+                         </thead>
+                         <tbody id="studentTableBody"></tbody>
+                     </table>
+                 </div>
+             </div>
+        </div>
+
+        <div id="tab-koreksi" class="section">
+            <div id="correctionSetup" class="card">
+                 <h2 class="text-xl font-semibold text-gray-700 mb-4">Mulai Sesi Koreksi Baru</h2>
+                 <div class="space-y-4">
+                     <div>
+                         <label for="correctionClassSelect" class="block font-medium text-gray-700 mb-1">Pilih Kelas untuk Dikoreksi:</label>
+                         <select id="correctionClassSelect"></select>
+                     </div>
+                     <div class="p-4 border rounded-lg">
+                         <h3 class="font-semibold mb-2">1. Pilihan Ganda (Kosongkan jika tidak ada)</h3>
+                         <label for="correctionAnswerKey" class="block font-medium text-gray-700 mb-1">Kunci Jawaban PG:</label>
+                         <input type="text" id="correctionAnswerKey" placeholder="Contoh: ABCDA..." class="uppercase">
+                     </div>
+                      <div class="p-4 border rounded-lg">
+                         <h3 class="font-semibold mb-2">2. Esai (Kosongkan jika tidak ada)</h3>
+                         <label for="essayMaxPoints" class="block font-medium text-gray-700 mb-1">Poin Maksimal per Soal Esai (pisahkan dengan koma):</label>
+                         <input type="text" id="essayMaxPoints" placeholder="Contoh: 10,5,10,8">
+                     </div>
+                 </div>
+                 <button id="startCorrectionBtn" class="btn btn-primary mt-6">🚀 Mulai Koreksi</button>
+            </div>
+            
+            <div id="correctionProcess" class="hidden">
+                <div class="card mb-4">
+                    <h2 class="text-xl font-semibold text-gray-700">Koreksi: Kelas <span id="currentClassName" class="text-blue-600"></span></h2>
+                    <p id="correctionDetails" class="text-sm text-gray-600"></p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-1 card">
+                        <h3 class="font-semibold text-lg mb-2">Daftar Siswa</h3>
+                        <p class="text-sm text-gray-500 mb-3">Klik nama siswa untuk input jawaban.</p>
+                        <ul id="correctionStudentList" class="space-y-2 max-h-96 overflow-y-auto"></ul>
+                    </div>
+                    <div class="md:col-span-2 card flex flex-col items-center justify-center text-center">
+                        <svg class="w-16 h-16 text-gray-300 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>
+                        <h3 class="font-semibold text-lg text-gray-700">Pilih siswa dari daftar</h3>
+                        <p class="text-gray-500">untuk mulai menginputkan jawaban.</p>
+                    </div>
+                </div>
+                <div class="mt-6 text-center">
+                    <button id="finishCorrectionBtn" class="btn btn-secondary">🏁 Selesai & Lakukan Analisis</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-analisis" class="section">
+            <div class="card">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Hasil Analisis Butir Soal</h2>
+                <div class="border-b mb-4">
+                    <nav id="analysisSubTabs" class="flex space-x-4"></nav>
+                </div>
+                <p id="analysisPlaceholder" class="text-gray-500">Belum ada analisis yang dibuat. Selesaikan sesi koreksi atau pilih dari riwayat.</p>
+                
+                <div id="analysisPG" class="analysis-section hidden">
+                    <div class="flex flex-wrap gap-3 mb-4">
+                        <button id="exportAnalysisHtmlBtn" class="btn btn-secondary">Unduh Laporan Lengkap (HTML) 🌐</button>
+                     </div>
+                     <div class="overflow-x-auto">
+                         <table class="min-w-full bg-white text-sm" id="analysisTable">
+                             <thead class="bg-gray-50">
+                                 <tr>
+                                     <th class="p-2 border">No. Soal</th>
+                                     <th class="p-2 border">Tingkat Kesukaran (P)</th>
+                                     <th class="p-2 border">Interpretasi</th>
+                                     <th class="p-2 border">Daya Pembeda (D)</th>
+                                     <th class="p-2 border">Interpretasi</th>
+                                     <th class="p-2 border">Rekomendasi</th>
+                                 </tr>
+                             </thead>
+                             <tbody id="analysisTableBody"></tbody>
+                         </table>
+                     </div>
+                     <div id="analysisSummary" class="mt-6 p-4 bg-gray-50 rounded-lg border text-gray-700"></div>
+                </div>
+
+                <div id="analysisEssay" class="analysis-section hidden">
+                    <div class="flex flex-wrap gap-3 mb-4">
+                        <button id="exportEssayAnalysisHtmlBtn" class="btn btn-secondary">Unduh Laporan Lengkap (HTML) 🌐</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full bg-white text-sm" id="analysisEssayTable">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="p-2 border">No. Soal</th>
+                                    <th class="p-2 border">Tingkat Kesukaran (P)</th>
+                                    <th class="p-2 border">Interpretasi</th>
+                                    <th class="p-2 border">Daya Pembeda (D)</th>
+                                    <th class="p-2 border">Interpretasi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="analysisEssayTableBody"></tbody>
+                        </table>
+                    </div>
+                    <div id="analysisEssaySummary" class="mt-6 p-4 bg-gray-50 rounded-lg border text-gray-700"></div>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-hasil" class="section">
+             <div class="card">
+                 <div id="studentResults">
+                      <h2 class="text-xl font-semibold text-gray-700 mb-4">Rekapitulasi Hasil Siswa</h2>
+                      <p id="resultsPlaceholder" class="text-gray-500">Belum ada hasil. Selesaikan sesi koreksi atau pilih dari riwayat.</p>
+                      <div id="resultsContent" class="hidden">
+                          <h3 class="font-semibold text-lg mb-2">Kelas: <span id="resultsClassName" class="text-blue-600"></span></h3>
+                          
+                          <div class="grid md:grid-cols-3 gap-4 my-4 p-4 border rounded-lg bg-gray-50">
+                              <div>
+                                  <label for="pgWeightInput" class="block font-medium text-gray-700 mb-1">Bobot Pilihan Ganda (%):</label>
+                                  <input type="number" id="pgWeightInput" min="0" max="100" class="w-full" value="70">
+                              </div>
+                              <div>
+                                  <label for="essayWeightInput" class="block font-medium text-gray-700 mb-1">Bobot Esai (%):</label>
+                                  <input type="number" id="essayWeightInput" min="0" max="100" class="w-full" value="30">
+                              </div>
+                              <div>
+                                  <label for="passingGradeInput" class="block font-medium text-gray-700 mb-1">Batas Nilai Tuntas (KKM):</label>
+                                  <input type="number" id="passingGradeInput" min="0" max="100" class="w-full" value="75">
+                              </div>
+                              <div class="md:col-span-3">
+                                  <button id="applyCalculationBtn" class="btn btn-primary w-full">Terapkan & Hitung Nilai Akhir</button>
+                              </div>
+                          </div>
+
+                         <div class="flex flex-wrap gap-3 mb-4">
+                             <button id="exportResultsPdfBtn" class="btn btn-primary">Unduh PDF Nilai 📄</button>
+                             <button id="exportClassReportHtmlBtn" class="btn btn-green">Unduh Laporan Kelas (HTML) 🖨️</button>
+                         </div>
+                         <div class="overflow-x-auto">
+                             <table class="min-w-full bg-white text-sm" id="resultsTable">
+                                 <thead class="bg-gray-50">
+                                     <tr>
+                                         <th class="p-2 border">No.</th>
+                                         <th class="p-2 border">Nama Siswa</th>
+                                         <th class="p-2 border">Skor PG</th>
+                                         <th class="p-2 border">Skor Esai</th>
+                                         <th class="p-2 border">Nilai Akhir</th>
+                                         <th class="p-2 border">Status</th>
+                                         <th class="p-2 border">Aksi</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody id="resultsTableBody"></tbody>
+                             </table>
+                         </div>
+                         <!-- Ringkasan Statistik -->
+                         <div id="resultsSummary" class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 hidden">
+                             <div class="bg-gray-50 p-4 rounded-lg border">
+                                 <h4 class="font-semibold text-gray-700 text-center mb-2">Pilihan Ganda</h4>
+                                 <div class="space-y-1 text-sm text-gray-600">
+                                     <p class="flex justify-between"><span>Tertinggi:</span> <strong id="summaryPgMax" class="text-gray-800">0</strong></p>
+                                     <p class="flex justify-between"><span>Terendah:</span> <strong id="summaryPgMin" class="text-gray-800">0</strong></p>
+                                     <p class="flex justify-between"><span>Rata-rata:</span> <strong id="summaryPgAvg" class="text-gray-800">0</strong></p>
+                                 </div>
+                             </div>
+                              <div class="bg-gray-50 p-4 rounded-lg border">
+                                 <h4 class="font-semibold text-gray-700 text-center mb-2">Esai</h4>
+                                 <div class="space-y-1 text-sm text-gray-600">
+                                     <p class="flex justify-between"><span>Tertinggi:</span> <strong id="summaryEssayMax" class="text-gray-800">0</strong></p>
+                                     <p class="flex justify-between"><span>Terendah:</span> <strong id="summaryEssayMin" class="text-gray-800">0</strong></p>
+                                     <p class="flex justify-between"><span>Rata-rata:</span> <strong id="summaryEssayAvg" class="text-gray-800">0</strong></p>
+                                 </div>
+                             </div>
+                              <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                 <h4 class="font-semibold text-blue-800 text-center mb-2">Nilai Akhir</h4>
+                                 <div class="space-y-1 text-sm text-blue-700">
+                                     <p class="flex justify-between"><span>Tertinggi:</span> <strong id="summaryFinalMax" class="text-blue-900">0</strong></p>
+                                     <p class="flex justify-between"><span>Terendah:</span> <strong id="summaryFinalMin" class="text-blue-900">0</strong></p>
+                                     <p class="flex justify-between"><span>Rata-rata:</span> <strong id="summaryFinalAvg" class="text-blue-900">0</strong></p>
+                                     <hr class="my-1 border-blue-200">
+                                     <p class="flex justify-between"><span>Jumlah Siswa:</span> <strong id="summaryStudentCount" class="text-blue-900">0</strong></p>
+                                 </div>
+                             </div>
+                         </div>
+                         <!-- Extended Summary Section -->
+                        <div id="resultsExtendedSummary" class="mt-6 hidden">
+                            <div class="card">
+                                <h3 class="text-xl font-semibold text-gray-700 mb-4">Analisis Lanjutan Hasil Belajar</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- Ketuntasan Belajar -->
+                                    <div class="bg-gray-50 p-4 rounded-lg border">
+                                        <h4 class="font-semibold text-gray-700 text-center mb-3">Ketuntasan Belajar</h4>
+                                        <div class="space-y-2 text-sm text-gray-600">
+                                            <p class="flex justify-between"><span>Daya Serap Klasikal:</span> <strong id="summaryAbsorption" class="text-gray-800 text-lg">0%</strong></p>
+                                            <hr class="my-2">
+                                            <p class="flex justify-between"><span>Jumlah Siswa Tuntas:</span> <strong id="summaryPassedCount" class="text-green-600">0</strong></p>
+                                            <p class="flex justify-between"><span>Persentase Tuntas:</span> <strong id="summaryPassedPercent" class="text-green-600">0%</strong></p>
+                                            <hr class="my-2">
+                                            <p class="flex justify-between"><span>Jumlah Siswa Remedial:</span> <strong id="summaryFailedCount" class="text-red-600">0</strong></p>
+                                            <p class="flex justify-between"><span>Persentase Remedial:</span> <strong id="summaryFailedPercent" class="text-red-600">0%</strong></p>
+                                        </div>
+                                    </div>
+                                    <!-- Distribusi Nilai -->
+                                    <div class="bg-gray-50 p-4 rounded-lg border">
+                                        <h4 class="font-semibold text-gray-700 text-center mb-3">Distribusi Frekuensi Nilai</h4>
+                                        <div class="overflow-x-auto">
+                                            <table class="min-w-full text-sm">
+                                                <thead class="bg-gray-200">
+                                                    <tr>
+                                                        <th class="p-2 border">Rentang Nilai</th>
+                                                        <th class="p-2 border">Jumlah Siswa</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="scoreDistributionBody">
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                      </div>
+                 </div>
+             </div>
+        </div>
+
+        <div id="tab-riwayat" class="section">
+            <div class="card">
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Riwayat Sesi Koreksi</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-white text-sm">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="p-2 border">Tanggal</th>
+                                <th class="p-2 border">Kelas</th>
+                                <th class="p-2 border">Jenis Soal</th>
+                                <th class="p-2 border">Jml. Siswa</th>
+                                <th class="p-2 border">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="historyTableBody">
+                            <!-- Riwayat akan diisi oleh JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center mt-8 mb-4 text-gray-500 text-sm">
+        <p>Created by Harsya Khairsyah</p>
+    </footer>
+
+    <!-- Modals -->
+    <div id="studentModal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 id="studentModalTitle" class="text-xl font-bold mb-4"></h2>
+            <div class="space-y-3"><label for="studentNameInput" class="block">Nama Siswa:</label><input type="text" id="studentNameInput" placeholder="Masukkan nama lengkap siswa..."></div>
+            <div class="flex justify-end gap-3 mt-4"><button id="cancelStudentModal" class="btn btn-secondary">Batal</button><button id="saveStudentModal" class="btn btn-primary">Simpan</button></div>
+        </div>
+    </div>
+    
+    <div id="infoModal" class="modal-overlay">
+         <div class="modal-content text-center">
+             <h2 id="infoModalTitle" class="text-xl font-bold mb-4"></h2>
+             <p id="infoModalMessage" class="mb-6"></p>
+             <div id="infoModalActions" class="flex justify-center gap-3"></div>
+         </div>
+    </div>
+
+    <div id="studentAnswerModal" class="modal-overlay">
+        <div class="modal-content !max-w-2xl">
+            <h2 id="studentAnswerModalTitle" class="text-xl font-bold mb-4">Input Jawaban</h2>
+            <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                <div id="answerModalPGSection" class="hidden">
+                    <h3 class="font-semibold text-lg border-b pb-1 mb-2">Pilihan Ganda</h3>
+                    <label for="studentAnswerInputPG" class="block mb-1 font-medium">Jawaban PG:</label>
+                    <input type="text" id="studentAnswerInputPG" placeholder="Masukkan jawaban pilihan ganda..." class="uppercase">
+                </div>
+                <div id="answerModalEssaySection" class="hidden">
+                    <h3 class="font-semibold text-lg border-b pb-1 mb-2">Esai</h3>
+                    <div id="studentAnswerInputEssay" class="space-y-3"></div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button id="cancelStudentAnswerModal" class="btn btn-secondary">Batal</button>
+                <button id="saveStudentAnswerModal" class="btn btn-primary">Simpan Jawaban</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="studentDetailModal" class="modal-overlay">
+        <div class="modal-content !max-w-3xl">
+            <div class="flex justify-between items-start mb-4">
+                <div>
+                    <h2 id="studentDetailModalTitle" class="text-xl font-bold"></h2>
+                    <p id="studentDetailModalScore" class="text-gray-600 font-semibold"></p>
+                </div>
+            </div>
+            <div id="studentDetailContent" class="space-y-6 flex-grow overflow-y-auto pr-2">
+                <div id="detailPGSection" class="hidden">
+                    <h3 class="font-semibold text-lg mb-2">Detail Jawaban Pilihan Ganda</h3>
+                    <div id="detailPGContent"></div>
+                </div>
+                <div id="detailEssaySection" class="hidden">
+                    <h3 class="font-semibold text-lg mb-2">Detail Skor Esai</h3>
+                    <div id="detailEssayContent"></div>
+                </div>
+            </div>
+            <div class="mt-6">
+                <h3 class="font-semibold text-lg mb-2">Feedback & Motivasi 💡</h3>
+                <p id="studentDetailFeedback" class="p-4 bg-blue-50 text-blue-800 rounded-lg border border-blue-200"></p>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button id="closeStudentDetailModal" class="btn btn-secondary">Kembali</button>
+                <button id="exportStudentDetailBtn" class="btn btn-primary">Unduh Hasil (HTML)</button>
+            </div>
+        </div>
+    </div>
+
+<script type="module">
+    // Firebase Imports
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, query, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const App = {
+        state: {
+            students: {},
+            classes: [],
+            history: [],
+            currentClass: '7A',
+            editingStudentId: null,
+            correctionSession: null,
+            studentDetail: null
+        },
+        db: null,
+        auth: null,
+        userId: null,
+        appId: typeof __app_id !== 'undefined' ? __app_id : 'default-app-id',
+        studentDataUnsubscribe: null,
+        historyUnsubscribe: null,
+
+        async init() {
+            this.showLoading(true, "Inisialisasi aplikasi...");
+            this.generateClasses();
+            this.registerEventListeners();
+
+            try {
+                const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+                 // Add dummy config if not provided for local testing
+                if (Object.keys(firebaseConfig).length === 0) {
+                    console.warn("Firebase config not found. Using placeholder data. THIS WILL NOT PERSIST DATA.");
+                    this.showInfoModal('Mode Demo', 'Konfigurasi database tidak ditemukan. Aplikasi berjalan dalam mode demo, data tidak akan tersimpan.');
+                    this.loadData(); // Fallback to local
+                    this.loadHistory(); // Fallback to local
+                    this.populateClassSelects();
+                    this.renderStudentTable();
+                    this.renderHistoryTable();
+                    this.showTab('tab-manajemen');
+                    this.showLoading(false);
+                    return;
+                }
+
+                const app = initializeApp(firebaseConfig);
+                this.db = getFirestore(app);
+                this.auth = getAuth(app);
+
+                onAuthStateChanged(this.auth, async (user) => {
+                    if (user) {
+                        this.userId = user.uid;
+                        document.getElementById('userIdDisplay').textContent = this.userId;
+                        document.getElementById('userInfo').classList.remove('hidden');
+                        this.showLoading(true, "Memuat data...");
+                        this.setupListeners();
+                    } else {
+                         try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(this.auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(this.auth);
+                            }
+                        } catch (error) {
+                            console.error("Authentication error:", error);
+                            this.showInfoModal('Error', 'Gagal melakukan autentikasi. Beberapa fitur mungkin tidak berfungsi.');
+                            this.showLoading(false);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                this.showInfoModal('Initialization Error', 'Gagal memuat koneksi ke database. Silakan refresh halaman.');
+                this.showLoading(false);
+            }
+        },
+
+        setupListeners() {
+            if (this.studentDataUnsubscribe) this.studentDataUnsubscribe();
+            if (this.historyUnsubscribe) this.historyUnsubscribe();
+
+            const studentDocRef = doc(this.db, `artifacts/${this.appId}/users/${this.userId}/students/studentData`);
+            this.studentDataUnsubscribe = onSnapshot(studentDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    this.state.students = docSnap.data().students || {};
+                } else {
+                    this.state.students = {};
+                    this.state.classes.forEach(c => this.state.students[c] = []);
+                }
+                this.populateClassSelects();
+                this.renderStudentTable();
+                if (document.getElementById('loadingOverlay').style.display !== 'none') {
+                    this.showTab('tab-manajemen');
+                }
+                this.showLoading(false);
+            }, (error) => {
+                console.error("Error listening to student data:", error);
+                this.showLoading(false);
+            });
+
+            const historyCollRef = collection(this.db, `artifacts/${this.appId}/users/${this.userId}/history`);
+            this.historyUnsubscribe = onSnapshot(query(historyCollRef), (querySnapshot) => {
+                const history = [];
+                querySnapshot.forEach((doc) => history.push({ ...doc.data(), id: doc.id }));
+                this.state.history = history.sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
+                this.renderHistoryTable();
+            }, (error) => console.error("Error listening to history data:", error));
+        },
+
+        showLoading(isLoading, message = "Memuat...") {
+            const overlay = document.getElementById('loadingOverlay');
+            if (isLoading) {
+                overlay.querySelector('p').textContent = message;
+                overlay.style.display = 'flex';
+            } else {
+                overlay.style.display = 'none';
+            }
+        },
+        
+        async saveStudentData() {
+            if (!this.userId) return; // Don't save if not authenticated (demo mode)
+            this.showLoading(true, "Menyimpan...");
+            try {
+                const studentDocRef = doc(this.db, `artifacts/${this.appId}/users/${this.userId}/students/studentData`);
+                await setDoc(studentDocRef, { students: this.state.students });
+            } catch (error) {
+                console.error("Error saving student data: ", error);
+                this.showInfoModal('Error', 'Gagal menyimpan data siswa.');
+            } finally {
+                this.showLoading(false);
+            }
+        },
+        
+        // Fallback functions for demo mode
+        saveData() { localStorage.setItem('schoolData', JSON.stringify(this.state.students)); },
+        loadData() {
+            const data = localStorage.getItem('schoolData');
+            if (data) this.state.students = JSON.parse(data);
+            else this.state.classes.forEach(c => this.state.students[c] = []);
+        },
+
+        registerEventListeners() {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => this.showTab(btn.dataset.tab)));
+            document.getElementById('classSelect').addEventListener('change', e => { this.state.currentClass = e.target.value; this.renderStudentTable(); });
+            document.getElementById('addStudentBtn').addEventListener('click', () => this.showStudentModal('add'));
+            document.getElementById('cancelStudentModal').addEventListener('click', () => this.showStudentModal(null));
+            document.getElementById('saveStudentModal').addEventListener('click', () => this.saveStudent());
+            document.getElementById('csvFile').addEventListener('change', e => this.handleCsvUpload(e));
+            document.getElementById('studentTableBody').addEventListener('click', e => {
+                const target = e.target.closest('button');
+                if (!target) return;
+                const id = target.dataset.id;
+                if (target.dataset.action === 'edit') this.showStudentModal('edit', id);
+                else if (target.dataset.action === 'delete') this.confirmDeleteStudent(id);
+            });
+            document.getElementById('startCorrectionBtn').addEventListener('click', () => this.startCorrection());
+            document.getElementById('finishCorrectionBtn').addEventListener('click', () => this.finishCorrection());
+            document.getElementById('applyCalculationBtn').addEventListener('click', () => this.renderStudentResults(this.state.correctionSession));
+            document.getElementById('resultsTableBody').addEventListener('click', e => {
+                const target = e.target.closest('button');
+                if (target && target.dataset.action === 'detail') this.showStudentDetail(target.dataset.id);
+            });
+            document.getElementById('cancelStudentAnswerModal').addEventListener('click', () => document.getElementById('studentAnswerModal').classList.remove('active'));
+            document.getElementById('saveStudentAnswerModal').addEventListener('click', () => this.saveStudentAnswerFromModal());
+            document.getElementById('closeStudentDetailModal').addEventListener('click', () => document.getElementById('studentDetailModal').classList.remove('active'));
+            document.getElementById('exportStudentDetailBtn').addEventListener('click', () => this.exportStudentDetail());
+            document.getElementById('exportAnalysisHtmlBtn').addEventListener('click', () => this.exportAnalysis('pg'));
+            document.getElementById('exportEssayAnalysisHtmlBtn').addEventListener('click', () => this.exportAnalysis('essay'));
+            document.getElementById('exportResultsPdfBtn').addEventListener('click', () => this.exportResults());
+            document.getElementById('exportClassReportHtmlBtn').addEventListener('click', () => this.exportClassReportHtml());
+            document.getElementById('historyTableBody').addEventListener('click', e => {
+                const target = e.target.closest('button');
+                if (!target) return;
+                const id = target.dataset.id;
+                if (target.dataset.action === 'detail') this.viewHistoryDetail(id);
+                else if (target.dataset.action === 'edit') this.editHistorySession(id);
+                else if (target.dataset.action === 'delete') this.confirmDeleteHistory(id);
+            });
+        },
+
+        showTab(tabId) {
+            document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tabId));
+        },
+
+        showStudentModal(mode, id = null) {
+            const modal = document.getElementById('studentModal'), title = document.getElementById('studentModalTitle'), nameInput = document.getElementById('studentNameInput');
+            if (mode === 'add') {
+                this.state.editingStudentId = null;
+                title.textContent = '➕ Tambah Siswa Baru';
+                nameInput.value = '';
+                modal.classList.add('active');
+                nameInput.focus();
+            } else if (mode === 'edit') {
+                this.state.editingStudentId = id;
+                const student = this.state.students[this.state.currentClass].find(s => s.id == id);
+                if (student) {
+                    title.textContent = '✏️ Edit Nama Siswa';
+                    nameInput.value = student.name;
+                    modal.classList.add('active');
+                    nameInput.focus();
+                }
+            } else modal.classList.remove('active');
+        },
+
+        showInfoModal(title, message, actions = [{ text: 'OK', class: 'btn-primary' }]) {
+            return new Promise(resolve => {
+                const modal = document.getElementById('infoModal'), actionsContainer = document.getElementById('infoModalActions');
+                document.getElementById('infoModalTitle').textContent = title;
+                document.getElementById('infoModalMessage').textContent = message;
+                actionsContainer.innerHTML = '';
+                actions.forEach(action => {
+                    const button = document.createElement('button');
+                    button.textContent = action.text;
+                    button.className = `btn ${action.class}`;
+                    button.onclick = () => { modal.classList.remove('active'); resolve(action.value); };
+                    actionsContainer.appendChild(button);
+                });
+                modal.classList.add('active');
+            });
+        },
+        
+        generateClasses() { [7, 8, 9].forEach(g => 'ABCDEFGHIJK'.split('').forEach(l => this.state.classes.push(`${g}${l}`))); },
+        populateClassSelects() {
+            const selects = [document.getElementById('classSelect'), document.getElementById('correctionClassSelect')];
+            selects.forEach(select => {
+                const currentVal = select.value;
+                select.innerHTML = this.state.classes.map(c => `<option value="${c}">Kelas ${c}</option>`).join('');
+                select.value = currentVal || this.state.currentClass;
+            });
+        },
+        renderStudentTable() {
+            const tbody = document.getElementById('studentTableBody');
+            const students = this.state.students[this.state.currentClass] || [];
+            if (students.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="text-center p-4 text-gray-500">Belum ada siswa di kelas ini.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = students.map((s, i) => `
+                <tr>
+                    <td class="py-2 px-4 border-b">${i + 1}</td>
+                    <td class="py-2 px-4 border-b">${s.name}</td>
+                    <td class="py-2 px-4 border-b space-x-2">
+                        <button class="text-blue-500 hover:text-blue-700 font-semibold" data-id="${s.id}" data-action="edit">Edit</button>
+                        <button class="text-red-500 hover:text-red-700 font-semibold" data-id="${s.id}" data-action="delete">Hapus</button>
+                    </td>
+                </tr>`).join('');
+        },
+
+        async saveStudent() {
+            const name = document.getElementById('studentNameInput').value.trim();
+            if (!name) { this.showInfoModal('Peringatan', 'Nama siswa tidak boleh kosong.'); return; }
+            if (this.state.editingStudentId) {
+                const student = this.state.students[this.state.currentClass].find(s => s.id == this.state.editingStudentId);
+                if (student) student.name = name;
+            } else {
+                if (!this.state.students[this.state.currentClass]) this.state.students[this.state.currentClass] = [];
+                this.state.students[this.state.currentClass].push({ id: Date.now(), name });
+            }
+            if(this.userId) await this.saveStudentData(); else this.saveData();
+            this.renderStudentTable();
+            this.showStudentModal(null);
+        },
+        confirmDeleteStudent(id) {
+            this.showInfoModal('Konfirmasi Hapus', 'Apakah Anda yakin ingin menghapus siswa ini?',
+                [{ text: 'Batal', class: 'btn-secondary', value: false }, { text: 'Ya, Hapus', class: 'btn-danger', value: true }]
+            ).then(confirmed => { if (confirmed) this.deleteStudent(id); });
+        },
+        async deleteStudent(id) {
+            this.state.students[this.state.currentClass] = this.state.students[this.state.currentClass].filter(s => s.id != id);
+            if(this.userId) await this.saveStudentData(); else this.saveData();
+            this.renderStudentTable();
+        },
+        async handleCsvUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            Papa.parse(file, {
+                complete: async (results) => {
+                    const studentsToAdd = results.data.map(row => row[0] && row[0].trim()).filter(Boolean).map(name => ({ id: Date.now() + Math.random(), name }));
+                    if (!this.state.students[this.state.currentClass]) this.state.students[this.state.currentClass] = [];
+                    this.state.students[this.state.currentClass].push(...studentsToAdd);
+                    if(this.userId) await this.saveStudentData(); else this.saveData();
+                    this.renderStudentTable();
+                    this.showInfoModal('Sukses', `${studentsToAdd.length} siswa berhasil ditambahkan.`);
+                    event.target.value = '';
+                },
+                error: (err) => this.showInfoModal('Error', 'Gagal memproses file CSV: ' + err.message)
+            });
+        },
+        
+        startCorrection(session = null) {
+            if (session) {
+                this.state.correctionSession = JSON.parse(JSON.stringify(session)); // Deep copy
+                document.getElementById('correctionClassSelect').value = session.className;
+                document.getElementById('correctionAnswerKey').value = session.answerKeyPG;
+                document.getElementById('essayMaxPoints').value = session.maxPointsEsai.join(',');
+            } else {
+                const className = document.getElementById('correctionClassSelect').value;
+                const answerKeyPG = document.getElementById('correctionAnswerKey').value.toUpperCase();
+                const maxPointsEsaiStr = document.getElementById('essayMaxPoints').value;
+                const students = this.state.students[className] || [];
+
+                if (students.length === 0) return this.showInfoModal('Peringatan', `Kelas ${className} tidak memiliki siswa.`);
+                if (!answerKeyPG && !maxPointsEsaiStr) return this.showInfoModal('Peringatan', 'Harap isi kunci jawaban PG atau poin maksimal esai.');
+                if (answerKeyPG && !/^[A-E]+$/.test(answerKeyPG)) return this.showInfoModal('Peringatan', 'Kunci jawaban PG hanya boleh berisi huruf A-E.');
+
+                let maxPointsEsai = [];
+                if (maxPointsEsaiStr) {
+                    maxPointsEsai = maxPointsEsaiStr.split(',').map(p => parseFloat(p.trim())).filter(p => !isNaN(p) && p > 0);
+                    if (maxPointsEsai.length === 0 && maxPointsEsaiStr.trim() !== '') return this.showInfoModal('Peringatan', 'Format poin esai tidak valid. Gunakan angka yang dipisah koma.');
+                }
+                this.state.correctionSession = { id: null, date: null, className, answerKeyPG, maxPointsEsai, results: [] };
+            }
+
+            const {className, answerKeyPG, maxPointsEsai} = this.state.correctionSession;
+            const students = this.state.students[className] || [];
+
+            document.getElementById('correctionSetup').classList.add('hidden');
+            document.getElementById('correctionProcess').classList.remove('hidden');
+            document.getElementById('currentClassName').textContent = className;
+            let details = [];
+            if(answerKeyPG) details.push(`${answerKeyPG.length} Soal PG`);
+            if(maxPointsEsai.length > 0) details.push(`${maxPointsEsai.length} Soal Esai`);
+            document.getElementById('correctionDetails').textContent = details.join(' | ');
+
+            document.getElementById('correctionStudentList').innerHTML = students.map(s => {
+                const result = this.state.correctionSession.results.find(r => r.studentId == s.id);
+                const statusIcon = result ? ' <span class="text-green-600 font-bold status-icon">✔️</span>' : '';
+                const bgColor = result ? ' bg-green-100' : '';
+                return `<li id="student-${s.id}" class="p-2 border rounded-md cursor-pointer hover:bg-gray-100${bgColor}">${s.name}${statusIcon}</li>`;
+            }).join('');
+            document.querySelectorAll('#correctionStudentList li').forEach(li => li.addEventListener('click', (e) => this.openAnswerModal(e.target.closest('li').id.split('-')[1])));
+        },
+
+        openAnswerModal(studentId) {
+            this.state.editingStudentId = studentId;
+            const { className, answerKeyPG, maxPointsEsai, results } = this.state.correctionSession;
+            const student = this.state.students[className].find(s => s.id == studentId);
+            const result = results.find(r => r.studentId == studentId);
+            
+            document.getElementById('studentAnswerModalTitle').textContent = `Input Jawaban: ${student.name}`;
+            
+            const pgSection = document.getElementById('answerModalPGSection');
+            if (answerKeyPG.length > 0) {
+                pgSection.classList.remove('hidden');
+                const pgInput = document.getElementById('studentAnswerInputPG');
+                pgInput.maxLength = answerKeyPG.length;
+                pgInput.value = result?.answersPG || '';
+            } else pgSection.classList.add('hidden');
+
+            const essaySection = document.getElementById('answerModalEssaySection');
+            const essayContainer = document.getElementById('studentAnswerInputEssay');
+            if (maxPointsEsai.length > 0) {
+                essaySection.classList.remove('hidden');
+                essayContainer.innerHTML = maxPointsEsai.map((max, i) => `
+                    <div class="grid grid-cols-3 items-center gap-2">
+                        <label for="essay-score-${i}" class="font-medium text-right">Skor Soal ${i + 1}:</label>
+                        <input type="number" id="essay-score-${i}" class="col-span-2 essay-score-input" min="0" max="${max}" placeholder="0 - ${max}" value="${result?.scoresEsai?.[i] || ''}">
+                    </div>
+                `).join('');
+            } else essaySection.classList.add('hidden');
+            
+            document.getElementById('studentAnswerModal').classList.add('active');
+        },
+
+        saveStudentAnswerFromModal() {
+            const studentId = this.state.editingStudentId;
+            const { answerKeyPG, maxPointsEsai } = this.state.correctionSession;
+            
+            let answersPG = '', scoresEsai = [], scorePG = 0, scoreEsai = 0, correctCountPG = 0;
+
+            if(answerKeyPG.length > 0) {
+                answersPG = document.getElementById('studentAnswerInputPG').value.toUpperCase();
+                if (answersPG.length !== answerKeyPG.length) return this.showInfoModal('Peringatan', `Jawaban PG harus berisi ${answerKeyPG.length} karakter.`);
+                if (answersPG && !/^[A-E]+$/.test(answersPG)) return this.showInfoModal('Peringatan', 'Jawaban PG hanya boleh berisi huruf A-E.');
+                for (let i = 0; i < answerKeyPG.length; i++) if (answersPG[i] === answerKeyPG[i]) correctCountPG++;
+                scorePG = answerKeyPG.length > 0 ? (correctCountPG / answerKeyPG.length) * 100 : 0;
+            }
+            
+            if (maxPointsEsai.length > 0) {
+                const inputs = document.querySelectorAll('.essay-score-input');
+                let totalScore = 0, totalMaxScore = 0;
+                for (let i = 0; i < inputs.length; i++) {
+                    const score = parseFloat(inputs[i].value);
+                    const max = parseFloat(inputs[i].max);
+                    if (isNaN(score) || score < 0 || score > max) return this.showInfoModal('Peringatan', `Skor esai no. ${i + 1} tidak valid (harus antara 0 dan ${max}).`);
+                    scoresEsai.push(score);
+                    totalScore += score;
+                    totalMaxScore += max;
+                }
+                scoreEsai = totalMaxScore > 0 ? (totalScore / totalMaxScore) * 100 : 0;
+            }
+            
+            let results = this.state.correctionSession.results.filter(r => r.studentId != studentId);
+            results.push({ studentId: Number(studentId), answersPG, scoresEsai, scorePG, scoreEsai, correctCountPG });
+            this.state.correctionSession.results = results;
+
+            const li = document.getElementById(`student-${studentId}`);
+            if (!li.querySelector('.status-icon')) li.innerHTML += ' <span class="text-green-600 font-bold status-icon">✔️</span>';
+            li.classList.add('bg-green-100');
+            
+            document.getElementById('studentAnswerModal').classList.remove('active');
+            this.state.editingStudentId = null;
+        },
+
+        async finishCorrection() {
+            const session = this.state.correctionSession;
+            if (!session || session.results.length === 0) return this.showInfoModal('Peringatan', 'Anda belum mengoreksi satu siswa pun.');
+            
+            if(!this.userId) { // DEMO MODE
+                if (session.id) {
+                     const index = this.state.history.findIndex(h => h.id === session.id);
+                     if (index !== -1) this.state.history[index] = session;
+                } else {
+                     session.id = Date.now();
+                     session.date = new Date().toISOString();
+                     this.state.history.unshift(session);
+                }
+                this.saveHistory();
+                this.renderHistoryTable();
+            } else { // FIRESTORE MODE
+                this.showLoading(true, "Menyimpan sesi...");
+                try {
+                    const sessionToSave = { ...session };
+                    delete sessionToSave.id; 
+                    sessionToSave.date = serverTimestamp();
+
+                    if (session.id) {
+                        const historyDocRef = doc(this.db, `artifacts/${this.appId}/users/${this.userId}/history`, session.id);
+                        await setDoc(historyDocRef, sessionToSave, { merge: true });
+                    } else {
+                        const historyCollRef = collection(this.db, `artifacts/${this.appId}/users/${this.userId}/history`);
+                        const docRef = await addDoc(historyCollRef, sessionToSave);
+                        session.id = docRef.id;
+                    }
+                } catch (error) {
+                    console.error("Error finishing correction:", error);
+                    this.showInfoModal('Error', 'Gagal menyimpan sesi koreksi.');
+                } finally {
+                    this.showLoading(false);
+                }
+            }
+
+            this.calculateAnalysis(session);
+            this.renderStudentResults(session);
+            this.showTab('tab-hasil');
+            document.getElementById('correctionSetup').classList.remove('hidden');
+            document.getElementById('correctionProcess').classList.add('hidden');
+            document.getElementById('correctionAnswerKey').value = '';
+            document.getElementById('essayMaxPoints').value = '';
+        },
+        
+        calculateAnalysis(session) {
+            const { answerKeyPG, maxPointsEsai, results } = session;
+            const subTabsContainer = document.getElementById('analysisSubTabs');
+            
+            subTabsContainer.innerHTML = '';
+            document.getElementById('analysisPlaceholder').classList.add('hidden');
+            ['analysisPG', 'analysisEssay'].forEach(el => {
+                const element = document.getElementById(el);
+                element.classList.add('hidden');
+                element.classList.remove('active');
+            });
+
+            if (results.length < 4) {
+                document.getElementById('analysisPlaceholder').textContent = 'Analisis membutuhkan minimal 4 data siswa untuk hasil akurat.';
+                document.getElementById('analysisPlaceholder').classList.remove('hidden');
+                return;
+            }
+            
+            let subTabsHtml = '';
+            const hasPgAnalysis = answerKeyPG && answerKeyPG.length > 0;
+            const hasEssayAnalysis = maxPointsEsai && maxPointsEsai.length > 0;
+
+            if (hasPgAnalysis) {
+                subTabsHtml += `<button class="sub-tab-btn" data-tab="analysisPG">Pilihan Ganda</button>`;
+                this.calculateAnalysisPG(session);
+            }
+            if (hasEssayAnalysis) {
+                subTabsHtml += `<button class="sub-tab-btn" data-tab="analysisEssay">Esai</button>`;
+                this.calculateAnalysisEsai(session);
+            }
+
+            subTabsContainer.innerHTML = subTabsHtml;
+
+            subTabsContainer.querySelectorAll('.sub-tab-btn').forEach(button => {
+                button.addEventListener('click', () => this.showAnalysisSubTab(button.dataset.tab));
+            });
+            
+            const firstVisibleTab = hasPgAnalysis ? 'analysisPG' : (hasEssayAnalysis ? 'analysisEssay' : null);
+            if(firstVisibleTab) this.showAnalysisSubTab(firstVisibleTab);
+        },
+        
+        showAnalysisSubTab(tabId) {
+            document.querySelectorAll('.analysis-section').forEach(s => {
+                s.classList.remove('active');
+                s.classList.add('hidden');
+            });
+            document.getElementById(tabId).classList.add('active');
+            document.getElementById(tabId).classList.remove('hidden');
+            document.querySelectorAll('.sub-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabId));
+        },
+
+        calculateAnalysisPG(session) {
+            document.getElementById('analysisPG').classList.remove('hidden');
+            const { results, answerKeyPG } = session;
+            const sortedResults = [...results].sort((a, b) => b.scorePG - a.scorePG);
+            const studentCount = sortedResults.length;
+            const groupSize = Math.max(1, Math.floor(studentCount * 0.27));
+            const upperGroup = sortedResults.slice(0, groupSize);
+            const lowerGroup = sortedResults.slice(-groupSize);
+
+            const data = answerKeyPG.split('').map((key, i) => {
+                const difficulty = sortedResults.filter(r => r.answersPG[i] === key).length / studentCount;
+                const upperCorrect = upperGroup.filter(r => r.answersPG[i] === key).length;
+                const lowerCorrect = lowerGroup.filter(r => r.answersPG[i] === key).length;
+                const discrimination = (upperCorrect - lowerCorrect) / groupSize;
+                return { difficulty: difficulty.toFixed(2), discrimination: discrimination.toFixed(2) };
+            });
+            this.renderAnalysis(data, 'PG');
+        },
+
+        calculateAnalysisEsai(session) {
+            document.getElementById('analysisEssay').classList.remove('hidden');
+            const { results, maxPointsEsai } = session;
+            const sortedResults = [...results].sort((a, b) => a.scoresEsai.reduce((s,c)=>s+c,0) - b.scoresEsai.reduce((s,c)=>s+c,0));
+
+            const studentCount = sortedResults.length;
+            const groupSize = Math.max(1, Math.floor(studentCount * 0.27));
+            const upperGroup = sortedResults.slice(0, groupSize);
+            const lowerGroup = sortedResults.slice(-groupSize);
+            
+            const data = maxPointsEsai.map((max, i) => {
+                const avgScore = sortedResults.reduce((sum, r) => sum + r.scoresEsai[i], 0) / studentCount;
+                const difficulty = avgScore / max;
+                const upperAvg = upperGroup.reduce((sum, r) => sum + r.scoresEsai[i], 0) / groupSize;
+                const lowerAvg = lowerGroup.reduce((sum, r) => sum + r.scoresEsai[i], 0) / groupSize;
+                const discrimination = groupSize > 0 ? (upperAvg - lowerAvg) / max : 0;
+                return { difficulty: difficulty.toFixed(2), discrimination: discrimination.toFixed(2) };
+            });
+            this.renderAnalysis(data, 'Essay', session);
+        },
+        
+        renderAnalysis(data, type, session = this.state.correctionSession) {
+            if (type === 'PG') {
+                const tbody = document.getElementById('analysisTableBody');
+                tbody.innerHTML = data.map((item, i) => {
+                    const diffInterp = item.difficulty > 0.7 ? 'Mudah 🟢' : item.difficulty < 0.3 ? 'Sukar 🔴' : 'Sedang 🟡';
+                    const discInterp = item.discrimination >= 0.4 ? 'S. Baik 👍' : item.discrimination >= 0.3 ? 'Baik 🙂' : item.discrimination >= 0.2 ? 'Cukup 🤔' : 'Jelek 👎';
+                    let recommendation = 'Dipertimbangkan';
+                    if (item.discrimination >= 0.3 && item.difficulty >= 0.3 && item.difficulty <= 0.8) recommendation = 'Diterima ✅';
+                    if (item.discrimination < 0.2) recommendation = 'Ditolak ❌';
+                    return `<tr><td class="p-2 border text-center">${i + 1}</td><td class="p-2 border text-center">${item.difficulty}</td><td class="p-2 border">${diffInterp}</td><td class="p-2 border text-center">${item.discrimination}</td><td class="p-2 border">${discInterp}</td><td class="p-2 border font-semibold">${recommendation}</td></tr>`;
+                }).join('');
+                this.generateAnalysisSummary(data, 'PG');
+            } else { // Essay
+                const tbody = document.getElementById('analysisEssayTableBody');
+                tbody.innerHTML = data.map((item, i) => {
+                    const diffInterp = item.difficulty > 0.7 ? 'Mudah 🟢' : item.difficulty < 0.3 ? 'Sukar 🔴' : 'Sedang 🟡';
+                    const discInterp = item.discrimination >= 0.3 ? 'Baik 👍' : item.discrimination >= 0.2 ? 'Cukup 🤔' : 'Jelek 👎';
+                    return `<tr><td class="p-2 border text-center">${i + 1}</td><td class="p-2 border text-center">${item.difficulty}</td><td class="p-2 border">${diffInterp}</td><td class="p-2 border text-center">${item.discrimination}</td><td class="p-2 border">${discInterp}</td></tr>`;
+                }).join('');
+                 this.generateAnalysisSummary(data, 'Essay', session);
+            }
+        },
+        
+        generateAnalysisSummary(data, type, session = this.state.correctionSession) {
+            const totalItems = data.length;
+            const easy = data.filter(i => i.difficulty > 0.7).length;
+            const medium = data.filter(i => i.difficulty >= 0.3 && i.difficulty <= 0.7).length;
+            const hard = data.filter(i => i.difficulty < 0.3).length;
+            let summary;
+
+            if (type === 'PG') {
+                const poor = data.filter(i => i.discrimination < 0.2).length;
+                const accepted = data.filter(i => i.discrimination >= 0.3 && i.difficulty >= 0.3 && i.difficulty <= 0.8).length;
+                summary = `<h3 class="font-semibold text-lg mb-2">Ringkasan Analisis PG</h3>
+                    <p>Dari <strong>${totalItems} soal</strong>: <strong>${easy}</strong> mudah, <strong>${medium}</strong> sedang, <strong>${hard}</strong> sukar. Sebanyak <strong>${accepted} soal</strong> direkomendasikan diterima, dan <strong>${poor} soal</strong> memiliki daya pembeda jelek.</p>`;
+            } else { // Essay
+                const poor = data.filter((item, i) => item.discrimination < 0.2).length;
+                summary = `<h3 class="font-semibold text-lg mb-2">Ringkasan Analisis Esai</h3>
+                    <p>Dari <strong>${totalItems} soal</strong>: <strong>${easy}</strong> mudah, <strong>${medium}</strong> sedang, <strong>${hard}</strong> sukar. Sebanyak <strong>${poor} soal</strong> memiliki daya pembeda yang kurang baik.</p>`;
+            }
+            document.getElementById(type === 'PG' ? 'analysisSummary' : 'analysisEssaySummary').innerHTML = summary;
+        },
+
+        renderStudentResults(session) {
+            if (!session) return;
+            this.state.correctionSession = session;
+            const pgWeight = parseFloat(document.getElementById('pgWeightInput').value) || 0;
+            const essayWeight = parseFloat(document.getElementById('essayWeightInput').value) || 0;
+            if (pgWeight + essayWeight !== 100) return this.showInfoModal('Peringatan', 'Total bobot PG dan Esai harus 100%.');
+
+            const passingGrade = parseFloat(document.getElementById('passingGradeInput').value);
+            const { results, className } = session;
+            const studentsData = this.state.students[className] || [];
+            const tbody = document.getElementById('resultsTableBody');
+            
+            results.forEach(res => {
+                const scorePG = res.scorePG || 0;
+                const scoreEsai = res.scoreEsai || 0;
+                res.finalScore = ((scorePG * pgWeight / 100) + (scoreEsai * essayWeight / 100)).toFixed(2);
+            });
+
+            results.sort((a,b) => (studentsData.find(s=>s.id == a.studentId)?.name || '').localeCompare(studentsData.find(s=>s.id == b.studentId)?.name || ''));
+            
+            tbody.innerHTML = results.map((res, i) => {
+                const student = studentsData.find(s => s.id == res.studentId);
+                const status = res.finalScore >= passingGrade ? '<span class="font-semibold text-green-600">Tuntas</span>' : '<span class="font-semibold text-red-600">Remedial</span>';
+                return `
+                    <tr>
+                        <td class="p-2 border text-center">${i + 1}</td>
+                        <td class="p-2 border">${student ? student.name : 'Siswa Dihapus'}</td>
+                        <td class="p-2 border text-center">${(res.scorePG || 0).toFixed(2)}</td>
+                        <td class="p-2 border text-center">${(res.scoreEsai || 0).toFixed(2)}</td>
+                        <td class="p-2 border text-center font-bold">${res.finalScore}</td>
+                        <td class="p-2 border text-center">${status}</td>
+                        <td class="p-2 border text-center"><button class="text-sm text-blue-500 hover:underline" data-action="detail" data-id="${res.studentId}">Detail</button></td>
+                    </tr>`;
+            }).join('');
+
+            document.getElementById('resultsClassName').textContent = className;
+            document.getElementById('resultsPlaceholder').classList.add('hidden');
+            document.getElementById('resultsContent').classList.remove('hidden');
+
+            const studentCount = results.length;
+            const summaryContainer = document.getElementById('resultsSummary');
+            if (studentCount > 0) {
+                const scoresPG = results.map(r => r.scorePG);
+                const scoresEsai = results.map(r => r.scoreEsai);
+                const scoresFinal = results.map(r => parseFloat(r.finalScore));
+                
+                const summary = {
+                    pg: {
+                        max: Math.max(...scoresPG).toFixed(2), min: Math.min(...scoresPG).toFixed(2),
+                        avg: (scoresPG.reduce((a, b) => a + b, 0) / studentCount).toFixed(2),
+                    },
+                    essay: {
+                        max: Math.max(...scoresEsai).toFixed(2), min: Math.min(...scoresEsai).toFixed(2),
+                        avg: (scoresEsai.reduce((a, b) => a + b, 0) / studentCount).toFixed(2),
+                    },
+                    final: {
+                        max: Math.max(...scoresFinal).toFixed(2), min: Math.min(...scoresFinal).toFixed(2),
+                        avg: (scoresFinal.reduce((a, b) => a + b, 0) / studentCount).toFixed(2),
+                    }
+                };
+
+                document.getElementById('summaryPgMax').textContent = session.answerKeyPG.length > 0 ? summary.pg.max : '-';
+                document.getElementById('summaryPgMin').textContent = session.answerKeyPG.length > 0 ? summary.pg.min : '-';
+                document.getElementById('summaryPgAvg').textContent = session.answerKeyPG.length > 0 ? summary.pg.avg : '-';
+
+                document.getElementById('summaryEssayMax').textContent = session.maxPointsEsai.length > 0 ? summary.essay.max : '-';
+                document.getElementById('summaryEssayMin').textContent = session.maxPointsEsai.length > 0 ? summary.essay.min : '-';
+                document.getElementById('summaryEssayAvg').textContent = session.maxPointsEsai.length > 0 ? summary.essay.avg : '-';
+
+                document.getElementById('summaryFinalMax').textContent = summary.final.max;
+                document.getElementById('summaryFinalMin').textContent = summary.final.min;
+                document.getElementById('summaryFinalAvg').textContent = summary.final.avg;
+                document.getElementById('summaryStudentCount').textContent = studentCount;
+                
+                summaryContainer.classList.remove('hidden');
+
+                // NEW LOGIC FOR EXTENDED SUMMARY
+                const extendedSummaryContainer = document.getElementById('resultsExtendedSummary');
+                const passedCount = scoresFinal.filter(score => score >= passingGrade).length;
+                const failedCount = studentCount - passedCount;
+                const passedPercent = ((passedCount / studentCount) * 100).toFixed(1);
+                const failedPercent = ((failedCount / studentCount) * 100).toFixed(1);
+                const absorptionRate = summary.final.avg;
+
+                document.getElementById('summaryAbsorption').textContent = `${absorptionRate}%`;
+                document.getElementById('summaryPassedCount').textContent = passedCount;
+                document.getElementById('summaryPassedPercent').textContent = `${passedPercent}%`;
+                document.getElementById('summaryFailedCount').textContent = failedCount;
+                document.getElementById('summaryFailedPercent').textContent = `${failedPercent}%`;
+
+                const scoreBins = {
+                    '91-100': 0, '81-90': 0, '71-80': 0, '61-70': 0, '51-60': 0,
+                    '41-50': 0, '31-40': 0, '21-30': 0, '11-20': 0, '0-10': 0
+                };
+                scoresFinal.forEach(score => {
+                    if (score > 90) scoreBins['91-100']++;
+                    else if (score > 80) scoreBins['81-90']++;
+                    else if (score > 70) scoreBins['71-80']++;
+                    else if (score > 60) scoreBins['61-70']++;
+                    else if (score > 50) scoreBins['51-60']++;
+                    else if (score > 40) scoreBins['41-50']++;
+                    else if (score > 30) scoreBins['31-40']++;
+                    else if (score > 20) scoreBins['21-30']++;
+                    else if (score > 10) scoreBins['11-20']++;
+                    else scoreBins['0-10']++;
+                });
+
+                const distributionBody = document.getElementById('scoreDistributionBody');
+                distributionBody.innerHTML = Object.entries(scoreBins).map(([range, count]) => `
+                    <tr>
+                        <td class="p-2 border text-center">${range}</td>
+                        <td class="p-2 border text-center font-semibold">${count}</td>
+                    </tr>
+                `).join('');
+
+                extendedSummaryContainer.classList.remove('hidden');
+
+            } else {
+                summaryContainer.classList.add('hidden');
+                document.getElementById('resultsExtendedSummary').classList.add('hidden');
+            }
+        },
+
+        showStudentDetail(studentId) {
+            const session = this.state.correctionSession;
+            const studentData = this.state.students[session.className].find(s => s.id == studentId);
+            const resultData = session.results.find(r => r.studentId == studentId);
+            if (!studentData || !resultData) return;
+
+            this.state.studentDetail = { studentData, resultData };
+
+            document.getElementById('studentDetailModalTitle').textContent = `Detail Hasil: ${studentData.name}`;
+            document.getElementById('studentDetailModalScore').textContent = `Nilai Akhir: ${resultData.finalScore}`;
+            
+            if (session.answerKeyPG.length > 0) {
+                document.getElementById('detailPGSection').classList.remove('hidden');
+                let detailHtml = '<table class="w-full text-sm"><thead><tr class="bg-gray-50"><th class="p-2 border">No.</th><th class="p-2 border">Kunci</th><th class="p-2 border">Jawaban</th><th class="p-2 border">Hasil</th></tr></thead><tbody>';
+                for (let i = 0; i < session.answerKeyPG.length; i++) {
+                    const isCorrect = session.answerKeyPG[i] === resultData.answersPG[i];
+                    detailHtml += `<tr class="${isCorrect ? 'bg-green-50' : 'bg-red-50'}"><td class="p-2 border text-center">${i + 1}</td><td class="p-2 border text-center">${session.answerKeyPG[i]}</td><td class="p-2 border text-center">${resultData.answersPG[i] || '-'}</td><td class="p-2 border text-center">${isCorrect ? '✔️' : '❌'}</td></tr>`;
+                }
+                document.getElementById('detailPGContent').innerHTML = detailHtml + '</tbody></table>';
+            } else document.getElementById('detailPGSection').classList.add('hidden');
+            
+            if (session.maxPointsEsai.length > 0) {
+                 document.getElementById('detailEssaySection').classList.remove('hidden');
+                 let essayHtml = '<table class="w-full text-sm"><thead><tr class="bg-gray-50"><th class="p-2 border">No.</th><th class="p-2 border">Skor Diperoleh</th><th class="p-2 border">Skor Maksimal</th></tr></thead><tbody>';
+                 for (let i = 0; i < session.maxPointsEsai.length; i++) {
+                     essayHtml += `<tr><td class="p-2 border text-center">${i + 1}</td><td class="p-2 border text-center">${resultData.scoresEsai[i]}</td><td class="p-2 border text-center">${session.maxPointsEsai[i]}</td></tr>`;
+                 }
+                 document.getElementById('detailEssayContent').innerHTML = essayHtml + '</tbody></table>';
+            } else document.getElementById('detailEssaySection').classList.add('hidden');
+            
+            document.getElementById('studentDetailFeedback').textContent = this.generateStudentFeedback(resultData.finalScore);
+            document.getElementById('studentDetailModal').classList.add('active');
+        },
+        
+        generateStudentFeedback(score) {
+            if (score >= 90) return "Luar biasa! Prestasimu sangat membanggakan. Kamu telah menunjukkan penguasaan materi yang sangat baik. Pertahankan semangat belajarmu!";
+            if (score >= 75) return "Kerja bagus! Kamu berhasil mencapai ketuntasan dengan baik. Terus asah pemahamanmu pada beberapa bagian yang masih kurang agar menjadi lebih hebat lagi!";
+            if (score >= 60) return "Cukup baik, usahamu patut dihargai. Ayo pelajari kembali materi yang masih salah. Sedikit lagi usahamu pasti akan membuahkan hasil maksimal!";
+            return "Tetap semangat! Meskipun hasilnya belum sesuai harapan, ini adalah langkah awal untuk belajar lebih giat. Jangan menyerah, kamu pasti bisa lebih baik!";
+        },
+
+        exportAnalysis(type) {
+            const session = this.state.correctionSession; if (!session) return;
+            const tableId = type === 'pg' ? 'analysisTable' : 'analysisEssayTable';
+            const summaryId = type === 'pg' ? 'analysisSummary' : 'analysisEssaySummary';
+            
+            const tableHtml = document.getElementById(tableId).outerHTML;
+            const summaryHtml = document.getElementById(summaryId).outerHTML;
+            const resultsSummaryHtml = document.getElementById('resultsSummary').outerHTML;
+            const resultsExtendedSummaryHtml = document.getElementById('resultsExtendedSummary').outerHTML;
+
+            const htmlContent = `<!DOCTYPE html>
+            <html lang="id">
+            <head>
+                <meta charset="UTF-8">
+                <title>Laporan Lengkap - Kelas ${session.className}</title>
+                <style>
+                    body { font-family: 'Inter', sans-serif; margin: 2rem; color: #333; }
+                    h1, h2, h3, h4 { margin-top: 1.5em; margin-bottom: 0.5em; }
+                    h1 { font-size: 2em; text-align: center; }
+                    h2 { font-size: 1.5em; border-bottom: 2px solid #eee; padding-bottom: 0.3em; }
+                    table { border-collapse: collapse; width: 100%; font-size: 0.9em; page-break-inside: auto; }
+                    tr { page-break-inside: avoid; page-break-after: auto; }
+                    thead { display: table-header-group; }
+                    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+                    thead th { background-color: #f2f2f2; }
+                    .card { border: 1px solid #ccc; border-radius: 0.75rem; padding: 1.5rem; margin-top: 1rem; background: #fff; page-break-inside: avoid; }
+                    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+                    .md\\:grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+                    .text-center { text-align: center; }
+                    .font-semibold { font-weight: 600; }
+                    .flex { display: flex; justify-content: space-between; }
+                    .bg-gray-50, .bg-blue-50 { background-color: #f9fafb; }
+                    .p-4 { padding: 1rem; }
+                    .rounded-lg { border-radius: 0.5rem; }
+                    button { display: none; }
+                </style>
+            </head>
+            <body>
+                <h1>Laporan Analisis & Hasil - Kelas ${session.className}</h1>
+                
+                <h2>Analisis Butir Soal (${type.toUpperCase()})</h2>
+                ${tableHtml}
+                ${summaryHtml}
+
+                <hr style="margin: 2rem 0; border: none; border-top: 2px solid #eee; page-break-after: always;">
+
+                <h2>Ringkasan Hasil Belajar</h2>
+                ${resultsSummaryHtml}
+                ${resultsExtendedSummaryHtml}
+            </body>
+            </html>`;
+
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Laporan_Lengkap_${type.toUpperCase()}_${session.className}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        exportClassReportHtml() {
+            const session = this.state.correctionSession; if (!session) return;
+            const tableHtml = document.getElementById('resultsTable').outerHTML;
+            const resultsSummaryHtml = document.getElementById('resultsSummary').outerHTML;
+            const resultsExtendedSummaryHtml = document.getElementById('resultsExtendedSummary').outerHTML;
+
+            const htmlContent = `<!DOCTYPE html>
+            <html lang="id">
+            <head>
+                <meta charset="UTF-8">
+                <title>Laporan Hasil Belajar - Kelas ${session.className}</title>
+                <style>
+                    body { font-family: 'Inter', sans-serif; margin: 2rem; color: #333; }
+                    h1, h2 { text-align: center; }
+                    h3 { font-size: 1.2em; }
+                    table { border-collapse: collapse; width: 100%; font-size: 0.9em; page-break-inside: auto; }
+                    tr { page-break-inside: avoid; page-break-after: auto; }
+                    thead { display: table-header-group; }
+                    th, td { border: 1px solid #ccc; padding: 0.5rem; text-align: left; }
+                    thead th { background-color: #f2f2f2; }
+                    .card { border: 1px solid #ccc; border-radius: 0.75rem; padding: 1.5rem; margin-top: 1rem; background: #fff; page-break-inside: avoid; }
+                    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem; }
+                    .md\\:grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+                    .text-center { text-align: center; }
+                    .font-semibold { font-weight: 600; }
+                    .flex { display: flex; justify-content: space-between; }
+                    .bg-gray-50, .bg-blue-50 { background-color: #f9fafb; }
+                    .p-4 { padding: 1rem; }
+                    .rounded-lg { border-radius: 0.5rem; }
+                    .hidden { display: none; }
+                    button { display: none; }
+                </style>
+            </head>
+            <body>
+                <h1>Laporan Hasil Belajar</h1>
+                <h2>Kelas ${session.className}</h2>
+                
+                ${tableHtml}
+                ${resultsSummaryHtml}
+                ${resultsExtendedSummaryHtml}
+            </body>
+            </html>`;
+
+            const blob = new Blob([htmlContent], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Laporan_Hasil_${session.className}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        exportResults() {
+            const { jsPDF } = window.jspdf;
+            const session = this.state.correctionSession; if (!session) return;
+            const doc = new jsPDF();
+
+            doc.setFontSize(16);
+            doc.text(`Rekapitulasi Hasil Siswa - Kelas ${session.className}`, 14, 15);
+            doc.setFontSize(10);
+            doc.text(`Tanggal: ${new Date().toLocaleDateString('id-ID')}`, 14, 22);
+
+            doc.autoTable({
+                html: '#resultsTable',
+                startY: 30,
+                columns: [ {dataKey:0},{dataKey:1},{dataKey:2},{dataKey:3},{dataKey:4},{dataKey:5} ]
+            });
+
+            let finalY = doc.lastAutoTable.finalY + 10;
+
+            if (document.getElementById('resultsSummary').classList.contains('hidden')) {
+                doc.save(`Hasil_Siswa_${session.className}.pdf`);
+                return;
+            }
+
+            doc.setFontSize(12);
+            doc.text('Ringkasan Statistik', 14, finalY);
+            finalY += 2;
+
+            const summaryData = [
+                ['', 'Tertinggi', 'Terendah', 'Rata-rata'],
+                ['Pilihan Ganda', document.getElementById('summaryPgMax').textContent, document.getElementById('summaryPgMin').textContent, document.getElementById('summaryPgAvg').textContent],
+                ['Esai', document.getElementById('summaryEssayMax').textContent, document.getElementById('summaryEssayMin').textContent, document.getElementById('summaryEssayAvg').textContent],
+                ['Nilai Akhir', document.getElementById('summaryFinalMax').textContent, document.getElementById('summaryFinalMin').textContent, document.getElementById('summaryFinalAvg').textContent]
+            ];
+
+            doc.autoTable({ startY: finalY, head: [summaryData[0]], body: summaryData.slice(1), theme: 'grid' });
+            
+            finalY = doc.lastAutoTable.finalY + 10;
+            
+            doc.setFontSize(12);
+            doc.text('Analisis Ketuntasan', 14, finalY);
+            finalY += 8;
+
+            const analysisText = [
+                `Daya Serap Klasikal: ${document.getElementById('summaryAbsorption').textContent}`,
+                `Jumlah Siswa Tuntas: ${document.getElementById('summaryPassedCount').textContent} (${document.getElementById('summaryPassedPercent').textContent})`,
+                `Jumlah Siswa Remedial: ${document.getElementById('summaryFailedCount').textContent} (${document.getElementById('summaryFailedPercent').textContent})`,
+                `Total Siswa: ${document.getElementById('summaryStudentCount').textContent}`
+            ];
+            doc.setFontSize(10);
+            doc.text(analysisText, 14, finalY);
+
+            doc.save(`Hasil_Siswa_${session.className}.pdf`);
+        },
+        
+        exportStudentDetail() {
+            const { studentData, resultData } = this.state.studentDetail;
+            const { answerKeyPG, maxPointsEsai } = this.state.correctionSession;
+            let pgHtml = '', essayHtml = '';
+
+            if (answerKeyPG.length > 0) pgHtml = `<div class="card"><h3>Detail Jawaban Pilihan Ganda</h3>${document.getElementById('detailPGContent').innerHTML.replace(/class="/g, 'class="row ')}</div>`;
+            if (maxPointsEsai.length > 0) essayHtml = `<div class="card"><h3>Detail Skor Esai</h3>${document.getElementById('detailEssayContent').innerHTML}</div>`;
+            const feedbackText = document.getElementById('studentDetailFeedback').textContent;
+            
+            const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Hasil ${studentData.name}</title><style>body{font-family:sans-serif;margin:2em;color:#333}.header{text-align:center;margin-bottom:2rem}.card{border:1px solid #ddd;border-radius:8px;padding:1.5rem;margin-top:1rem}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:center}th{background-color:#f2f2f2}.correct{background-color:#e6fffa}.incorrect{background-color:#fff5f5}.feedback{background-color:#e0f2fe;border-left:4px solid #3b82f6;padding:1rem;margin-top:2rem}</style></head><body><div class="header"><h1>Laporan Hasil Belajar</h1></div><div class="card"><h2>${studentData.name}</h2><p><strong>Nilai Akhir: ${resultData.finalScore}</strong></p></div>${pgHtml}${essayHtml}<div class="card feedback"><h3>Feedback & Motivasi</h3><p>${feedbackText}</p></div></body></html>`.replace(/✔️/g, 'Benar').replace(/❌/g, 'Salah').replace(/bg-green-50/g, 'correct').replace(/bg-red-50/g, 'incorrect');
+
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Hasil_${studentData.name}.html`;
+            a.click();
+            URL.revokeObjectURL(url);
+        },
+        
+        saveHistory() { localStorage.setItem('koreksiAppHistory', JSON.stringify(this.state.history)); },
+        loadHistory() {
+            const data = localStorage.getItem('koreksiAppHistory');
+            if (data) this.state.history = JSON.parse(data);
+        },
+        renderHistoryTable() {
+            const tbody = document.getElementById('historyTableBody');
+            if (this.state.history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center p-4 text-gray-500">Belum ada riwayat koreksi.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = this.state.history.map(session => {
+                const dateObj = session.date?.toDate ? session.date.toDate() : new Date(session.date);
+                const date = dateObj.toLocaleDateString('id-ID', {day:'2-digit', month:'short', year:'numeric'});
+
+                let types = [];
+                if (session.answerKeyPG) types.push('PG');
+                if (session.maxPointsEsai.length > 0) types.push('Esai');
+                
+                return `
+                    <tr>
+                        <td class="p-2 border text-center">${date}</td>
+                        <td class="p-2 border text-center">${session.className}</td>
+                        <td class="p-2 border text-center">${types.join(' & ')}</td>
+                        <td class="p-2 border text-center">${session.results.length}</td>
+                        <td class="p-2 border text-center whitespace-nowrap">
+                            <button class="btn btn-sm btn-primary" data-id="${session.id}" data-action="detail" title="Lihat Detail">🔎</button>
+                            <button class="btn btn-sm btn-secondary" data-id="${session.id}" data-action="edit" title="Edit Sesi">✏️</button>
+                            <button class="btn btn-sm btn-danger" data-id="${session.id}" data-action="delete" title="Hapus Sesi">🗑️</button>
+                        </td>
+                    </tr>
+                `
+            }).join('');
+        },
+
+        viewHistoryDetail(id) {
+            const session = this.state.history.find(h => h.id == id);
+            if (session) {
+                this.state.correctionSession = session;
+                this.calculateAnalysis(session);
+                this.renderStudentResults(session);
+                this.showTab('tab-hasil');
+            }
+        },
+        
+        editHistorySession(id) {
+            const session = this.state.history.find(h => h.id == id);
+            if (session) {
+                this.startCorrection(session);
+                this.showTab('tab-koreksi');
+            }
+        },
+        
+        confirmDeleteHistory(id) {
+            this.showInfoModal('Konfirmasi Hapus Riwayat', 'Apakah Anda yakin ingin menghapus sesi koreksi ini secara permanen?',
+                [{ text: 'Batal', class: 'btn-secondary', value: false }, { text: 'Ya, Hapus', class: 'btn-danger', value: true }]
+            ).then(confirmed => { if (confirmed) this.deleteHistory(id); });
+        },
+
+        async deleteHistory(id) {
+            if(!this.userId) { // DEMO MODE
+                this.state.history = this.state.history.filter(h => h.id != id);
+                this.saveHistory();
+                this.renderHistoryTable();
+            } else { // FIRESTORE MODE
+                this.showLoading(true, "Menghapus...");
+                try {
+                    const historyDocRef = doc(this.db, `artifacts/${this.appId}/users/${this.userId}/history`, id);
+                    await deleteDoc(historyDocRef);
+                    this.showInfoModal('Sukses', 'Riwayat sesi berhasil dihapus.');
+                } catch (error) {
+                    console.error("Error deleting history:", error);
+                    this.showInfoModal('Error', 'Gagal menghapus riwayat.');
+                } finally {
+                    this.showLoading(false);
+                }
+            }
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => App.init());
+</script>
+</body>
+</html>
+
